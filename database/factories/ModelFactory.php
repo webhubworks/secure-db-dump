@@ -1,6 +1,6 @@
 <?php
 
-namespace VendorName\Skeleton\Database\Factories;
+namespace Webhub\SecureDbDump\Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
 
