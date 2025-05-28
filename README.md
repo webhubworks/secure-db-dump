@@ -1,23 +1,15 @@
-# DDEV
-In case you get a permission error when trying to CREATE or DROP a database, do the following in the laravel project:
-```bash
-ddev mysql
-GRANT ALL ON *.* TO 'db'@'%';
-FLUSH PRIVILEGES;
-```
-
 # Config
 Publish the config file via `artisan vendor:publish --tag=secure-db-dump-config`.
 
 ## Anonymize fields
-This package uses Faker to anonymize fields. You can find the available formatters here:
+This package uses Faker to anonymize fields. You can find the available formatters/methods here:
 https://fakerphp.org/formatters/
 
-Per field you have to define a type. Possible values are: faker or static.
+Per field you have to define a type. Possible values are: `faker` or `static`.
 ### Type: static
-You will need to provide a value for the field.
+You will need to provide a `value` for the field.
 ### Type: faker
-You will need to provide a method and optionally arguments (an array) for the Faker method.
+You will need to provide a `method` and optionally `args` (an array) for the Faker method.
 
 ### Examples
 ```php
@@ -58,3 +50,12 @@ You will need to provide a method and optionally arguments (an array) for the Fa
     ],
 ...
 ```
+
+# DDEV
+In case you get a permission error when trying to CREATE or DROP a database, do the following in the laravel project:
+```bash
+ddev mysql
+GRANT ALL ON *.* TO 'db'@'%';
+FLUSH PRIVILEGES;
+```
+
