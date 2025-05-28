@@ -140,10 +140,12 @@ class SecureDbDumpCommand extends Command
         }
 
         if (! empty(config('secure-db-dump.ignore_tables'))) {
+            DB::statement('SET FOREIGN_KEY_CHECKS=0;');
             foreach (config('secure-db-dump.ignore_tables') as $table) {
                 $this->info('Truncating ignored table: '.$table);
                 DB::table($table)->truncate();
             }
+            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
         }
         $this->info('✅ Done.');
     }
