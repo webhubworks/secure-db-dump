@@ -1,5 +1,5 @@
 {
-    "name": "webhubworks/secure-db-dump",
+    "name": "webhubworks/laravel-secure-db-dump",
     "description": "Allows you to dump your db and anonymize its content.",
     "keywords": [
         "Webhubworks",
