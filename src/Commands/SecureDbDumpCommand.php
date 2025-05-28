@@ -184,6 +184,9 @@ class SecureDbDumpCommand extends Command
             $this->withProgressBar(DB::table($table)->cursor(), function ($row) use ($fields, $table) {
                 $dataToUpdate = [];
                 foreach ($fields as $field => $config) {
+                    if(empty($dataToUpdate[$field])){
+                        continue;
+                    }
 
                     if ($config['type'] === 'faker') {
                         $method = $config['method'];
