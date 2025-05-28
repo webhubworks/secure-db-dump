@@ -5,3 +5,6 @@ ddev mysql
 GRANT ALL ON *.* TO 'db'@'%';
 FLUSH PRIVILEGES;
 ```
+
+# Faker
+https://fakerphp.org/formatters/

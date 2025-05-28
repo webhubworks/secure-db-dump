@@ -2,6 +2,8 @@
 
 namespace Webhub\SecureDbDump\Commands;
 
+use Faker\Factory;
+use Faker\Generator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -22,27 +24,30 @@ class SecureDbDumpCommand extends Command
     private string $tempDatabaseName = 'temp_secure_db_dump';
     private string $disk;
 
+    private Generator $faker;
+
     public function handle(): int
     {
-        $config = config('secure-db-dump');
-        $this->currentConnection = $config['db_connection'] ?? DB::getDefaultConnection();
+        $this->faker = Factory::create();
+        $this->currentConnection = config('secure-db-dump.db_connection') ?? DB::getDefaultConnection();
         $this->databaseConfig = config("database.connections.$this->currentConnection");
 
-        $this->disk = $config['disk'] ?? 'local';
+        $this->disk = config('secure-db-dump.disk') ?? 'local';
 
-        $pathToDumpFile = $this->dumpOriginalDatabase($config);
+        $pathToDumpFile = $this->dumpOriginalDatabase();
 
         $this->setupTempDatabase();
         $this->importIntoTempDatabase($pathToDumpFile);
 
         $this->anonymizeDataInTempDatabase();
 
-        //$this->dropDatabase();
+        $this->dropDatabase();
+        unlink($pathToDumpFile);
 
         return self::SUCCESS;
     }
 
-    private function dumpOriginalDatabase(mixed $config): string
+    private function dumpOriginalDatabase(): string
     {
         $dumper = match ($this->currentConnection) {
             'mysql' => new MySql,
@@ -58,12 +63,12 @@ class SecureDbDumpCommand extends Command
             ->setUserName($this->databaseConfig['username'])
             ->setPassword($this->databaseConfig['password']);
 
-        /*if ($config['only_content'] ?? false) {
+        /*if (config('secure-db-dump.only_content') ?? false) {
             $dumper->doNotCreateTables();
         }*/
 
-        if (!empty($config['ignore_tables'])) {
-            $dumper->excludeTables($config['ignore_tables']);
+        if (!empty(config('secure-db-dump.ignore_tables'))) {
+            $dumper->excludeTables(config('secure-db-dump.ignore_tables'));
         }
 
         $pathToDumpFile = Storage::disk($this->disk)->path('secure_dump_' . $this->databaseConfig['database'] . '_' . date('Ymd_His') . '.sql');
@@ -74,7 +79,7 @@ class SecureDbDumpCommand extends Command
 
     private function setupTempDatabase(): void
     {
-        DB::statement('CREATE DATABASE IF NOT EXISTS '.$this->tempDatabaseName);
+        DB::statement('CREATE DATABASE IF NOT EXISTS ' . $this->tempDatabaseName);
 
         config(['database.connections.temp_secure_db_dump' => [
             'driver' => 'mysql',
@@ -96,13 +101,48 @@ class SecureDbDumpCommand extends Command
 
     private function dropDatabase(): void
     {
+        if(app()->isLocal()) {
+            $this->info('Skipping dropping database in local environment.');
+            return;
+        }
+
         try {
             DB::statement('DROP DATABASE IF EXISTS ' . $this->tempDatabaseName);
-        } catch (\Exception $exception)
-        {
+        } catch (\Exception $exception) {
             $this->error('Failed to drop database: ' . $exception->getMessage());
+
             $this->info('Trying to drop all tables instead.');
-            // TODO...
+            $tables = DB::select('SHOW TABLES');
+            foreach ($tables as $table) {
+                $tableName = array_values((array)$table)[0];
+                DB::statement("DROP TABLE IF EXISTS `$tableName`");
+            }
         }
+    }
+
+    private function anonymizeDataInTempDatabase(): void
+    {
+        $fieldsToAnonymizeGroupedByTable = config('secure-db-dump.anonymize_fields', []);
+
+        collect($fieldsToAnonymizeGroupedByTable)->each(function ($fields, $table) {
+            $this->info('Anonymizing fields in table: ' . $table);
+            $this->withProgressBar(DB::table($table)->cursor(), function ($row) use ($fields, $table) {
+                $dataToUpdate = [];
+                foreach ($fields as $field => $config) {
+
+                    if ($config['type'] === 'faker') {
+                        $method = $config['method'];
+                        $dataToUpdate[$field] = $this->faker->$method($config['value'] ?? null);
+                        continue;
+                    }
+
+                    if ($config['type'] === 'static') {
+                        $dataToUpdate[$field] = $config['value'];
+                    }
+                }
+                DB::table($table)->where('id', $row->id)->update($dataToUpdate);
+            });
+            $this->info('');
+        });
     }
 }

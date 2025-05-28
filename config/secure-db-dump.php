@@ -24,4 +24,34 @@ return [
     'ignore_tables' => [
         // 'users',
     ],
+
+    /**
+     * Specify which fields should be anonymized.
+     * For each table, create an array of fields that should be anonymized.
+     *
+     * See `https://fakerphp.org/formatters/` which faker methods are available.
+     */
+    'anonymize_fields' => [
+        'users' => [
+            'name' => [
+                'type' => 'faker',
+                'method' => 'name',
+            ],
+            'email' => [
+                'type' => 'faker',
+                'method' => 'email',
+            ],
+            'password' => [
+                'type' => 'static',
+                'value' => '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
+            ],
+        ],
+        /*'cars' => [
+            'licence_plate' => [
+                'type' => 'faker',
+                'method' => 'regexify',
+                'value' => 'LG [A-Z]{2} [0-9]{2,4}'
+            ],
+        ],*/
+    ],
 ];
