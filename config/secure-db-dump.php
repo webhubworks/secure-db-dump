@@ -14,7 +14,7 @@ return [
 
     /**
      * Specify whether to dump only the content of the database.
-     * If true, it will not create tables in the dump.
+     * If true, it will not include table creation statements in the final dump.
      */
     'only_content' => env('SECURE_DB_DUMP_ONLY_CONTENT', false),
 
