@@ -2,11 +2,13 @@
 
 namespace Webhub\SecureDbDump\Commands;
 
+use Exception;
 use Faker\Factory;
 use Faker\Generator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Spatie\DbDumper\Compressors\GzipCompressor;
 use Spatie\DbDumper\Databases\MariaDb;
 use Spatie\DbDumper\Databases\MongoDb;
 use Spatie\DbDumper\Databases\MySql;
@@ -38,7 +40,7 @@ class SecureDbDumpCommand extends Command
         $this->faker = Factory::create();
         $this->originalDatabaseConnection = config('secure-db-dump.db_connection') ?? DB::getDefaultConnection();
         $this->originalDatabaseConfig = config("database.connections.$this->originalDatabaseConnection");
-        $dumpFileName = $this->originalDatabaseConfig['database'].'_'.date('Ymd_His').'.sql';
+        $dumpFileName = $this->originalDatabaseConfig['database'].'_'.date('Ymd_His').'.sql.gz';
         $this->pathToOriginalDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('original_dump_'.$dumpFileName);
         $this->pathToSecureDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('secure_dump_'.$dumpFileName);
 
@@ -74,7 +76,8 @@ class SecureDbDumpCommand extends Command
         $dumper = $dumper::create()
             ->setDbName($this->originalDatabaseConfig['database'])
             ->setUserName($this->originalDatabaseConfig['username'])
-            ->setPassword($this->originalDatabaseConfig['password']);
+            ->setPassword($this->originalDatabaseConfig['password'])
+            ->useCompressor(new GzipCompressor());
 
         $this->info('Dumping original database to '.$this->pathToOriginalDumpFile.'...');
         $dumper->dumpToFile($this->pathToOriginalDumpFile);
@@ -95,7 +98,8 @@ class SecureDbDumpCommand extends Command
         $dumper = $dumper::create()
             ->setDbName($this->tempDatabaseConfig['database'])
             ->setUserName($this->tempDatabaseConfig['username'])
-            ->setPassword($this->tempDatabaseConfig['password']);
+            ->setPassword($this->tempDatabaseConfig['password'])
+            ->useCompressor(new GzipCompressor());
 
         if (config('secure-db-dump.only_content') ?? false) {
             $dumper->doNotCreateTables();
@@ -129,7 +133,11 @@ class SecureDbDumpCommand extends Command
     private function importIntoTempDatabase(): void
     {
         $this->info('Importing the original dump into the temporary database...');
-        DB::unprepared(file_get_contents($this->pathToOriginalDumpFile));
+        //DB::unprepared(file_get_contents($this->pathToOriginalDumpFile));
+        exec("gunzip -c {$this->pathToOriginalDumpFile} | mysql -u{$this->tempDatabaseConfig['username']} -p{$this->tempDatabaseConfig['password']} {$this->tempDatabaseConfig['database']}", $output, $returnVar);
+        if ($returnVar !== 0) {
+            throw new Exception("Error importing database: " . implode("\n", $output));
+        }
 
         if (! empty(config('secure-db-dump.ignore_tables'))) {
             foreach (config('secure-db-dump.ignore_tables') as $table) {
