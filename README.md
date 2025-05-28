@@ -39,6 +39,17 @@ You will need to provide a `method` and optionally `args` (an array) for the Fak
                 'type' => 'static',
                 'value' => '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
             ],
+        
+            # You can also add where conditions.
+            # Create an array where the key is the column name and the value is the value to match.
+            [
+                'field' => 'some_field',
+                'type' => 'faker',
+                'method' => 'sentence',
+                'where' => [
+                    'id' => 2,
+                ]
+            ],
         ],
         
         'cars' => [

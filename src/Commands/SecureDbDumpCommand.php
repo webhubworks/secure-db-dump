@@ -186,9 +186,23 @@ class SecureDbDumpCommand extends Command
                 foreach ($fields as $config) {
                     $field = $config['field'] ?? null;
                     $type = $config['type'] ?? null;
+                    $whereConditions = $config['where'] ?? null;
 
                     if($field === null || $type === null || empty($row->$field)){
                         continue;
+                    }
+
+                    if($whereConditions !== null){
+                        $matches = true;
+                        foreach ($whereConditions as $whereField => $whereValue) {
+                            if ($row->$whereField !== $whereValue) {
+                                $matches = false;
+                                break;
+                            }
+                        }
+                        if (!$matches) {
+                            continue;
+                        }
                     }
 
                     if ($type === 'faker') {
