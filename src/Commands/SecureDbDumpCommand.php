@@ -190,7 +190,12 @@ class SecureDbDumpCommand extends Command
     private function anonymizeDataInTempDatabase(): void
     {
         $this->info('Anonymizing the temporary database...');
-        $fieldsToAnonymizeGroupedByTable = config('secure-db-dump.anonymize_fields', []);
+        $rules = config('secure-db-dump.anonymize_fields', []);
+
+        $fieldsToAnonymizeGroupedByTable = $rules;
+        if (is_string($rules) && class_exists($rules)) {
+            $fieldsToAnonymizeGroupedByTable = app($rules)();
+        }
 
         collect($fieldsToAnonymizeGroupedByTable)->each(function ($fields, $table) {
 
