@@ -76,7 +76,9 @@ class SecureDbDumpCommand extends Command
             ->setUserName($this->originalDatabaseConfig['username'])
             ->setPassword($this->originalDatabaseConfig['password']);
 
+        $this->info('Dumping original database to '.$this->pathToOriginalDumpFile.'...');
         $dumper->dumpToFile($this->pathToOriginalDumpFile);
+        $this->info('✅ Done.');
     }
 
     private function dumpSecureDatabase(): void
@@ -99,11 +101,14 @@ class SecureDbDumpCommand extends Command
             $dumper->doNotCreateTables();
         }
 
+        $this->info('Dumping secure database to '.$this->pathToSecureDumpFile.'...');
         $dumper->dumpToFile($this->pathToSecureDumpFile);
+        $this->info('✅ Done.');
     }
 
     private function setupTempDatabase(): void
     {
+        $this->info('Setting up temporary database...');
         DB::statement('CREATE DATABASE IF NOT EXISTS '.$this->tempDatabaseName);
 
         config(['database.connections.temp_secure_db_dump' => [
@@ -118,10 +123,12 @@ class SecureDbDumpCommand extends Command
 
         DB::setDefaultConnection('temp_secure_db_dump');
         $this->tempDatabaseConfig = config('database.connections.temp_secure_db_dump');
+        $this->info('✅ Done.');
     }
 
     private function importIntoTempDatabase(): void
     {
+        $this->info('Importing the original dump into the temporary database...');
         DB::unprepared(file_get_contents($this->pathToOriginalDumpFile));
 
         if (! empty(config('secure-db-dump.ignore_tables'))) {
@@ -130,10 +137,12 @@ class SecureDbDumpCommand extends Command
                 DB::table($table)->truncate();
             }
         }
+        $this->info('✅ Done.');
     }
 
     private function cleanUpTempDatabase(): void
     {
+        $this->info('Cleaning up the temporary database...');
         if (app()->isLocal()) {
             $this->warn('Skipping dropping database in local environment.');
 
@@ -152,10 +161,12 @@ class SecureDbDumpCommand extends Command
                 DB::statement("DROP TABLE IF EXISTS `$tableName`");
             }
         }
+        $this->info('✅ Done.');
     }
 
     private function anonymizeDataInTempDatabase(): void
     {
+        $this->info('Anonymizing the temporary database...');
         $fieldsToAnonymizeGroupedByTable = config('secure-db-dump.anonymize_fields', []);
 
         collect($fieldsToAnonymizeGroupedByTable)->each(function ($fields, $table) {
@@ -180,5 +191,6 @@ class SecureDbDumpCommand extends Command
             });
             $this->info('');
         });
+        $this->info('✅ Done.');
     }
 }
