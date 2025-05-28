@@ -15,6 +15,7 @@ use Spatie\DbDumper\Databases\MongoDb;
 use Spatie\DbDumper\Databases\MySql;
 use Spatie\DbDumper\Databases\PostgreSql;
 use Spatie\DbDumper\Databases\Sqlite;
+use Webhub\SecureDbDump\AnonymizerConfig;
 
 class SecureDbDumpCommand extends Command
 {
@@ -36,14 +37,12 @@ class SecureDbDumpCommand extends Command
 
     private Generator $faker;
 
+    /**
+     * @throws Exception
+     */
     public function handle(): int
     {
-        $this->faker = Factory::create(config('secure-db-dump.faker_locale', 'de_DE'));
-        $this->originalDatabaseConnection = config('secure-db-dump.db_connection') ?? DB::getDefaultConnection();
-        $this->originalDatabaseConfig = config("database.connections.$this->originalDatabaseConnection");
-        $dumpFileName = $this->originalDatabaseConfig['database'].'_'.date('Ymd_His').'.sql.gz';
-        $this->pathToOriginalDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('original_dump_'.$dumpFileName);
-        $this->pathToSecureDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('secure_dump_'.$dumpFileName);
+        $this->setup();
 
         if($this->option('only-anonymize')){
             $this->setupTempDatabase();
@@ -52,13 +51,18 @@ class SecureDbDumpCommand extends Command
             return self::SUCCESS;
         }
 
+        /**
+         * Original database
+         */
         $this->dumpOriginalDatabase();
 
+        /**
+         * Temp / Secure / Anonymized database
+         */
         $this->setupTempDatabase();
         $this->importIntoTempDatabase();
         $this->anonymizeDataInTempDatabase();
         $this->dumpSecureDatabase();
-
         $this->cleanUpTempDatabase();
 
         if ($this->ask('Should I delete the original dump file? (yes/no)', 'yes') === 'yes') {
@@ -68,6 +72,18 @@ class SecureDbDumpCommand extends Command
         $this->info('You can find your secure database dump at: '.$this->pathToSecureDumpFile);
 
         return self::SUCCESS;
+    }
+
+    private function setup(): void
+    {
+        $this->faker = Factory::create(config('secure-db-dump.faker_locale', 'de_DE'));
+
+        $this->originalDatabaseConnection = config('secure-db-dump.db_connection') ?? DB::getDefaultConnection();
+        $this->originalDatabaseConfig = config("database.connections.$this->originalDatabaseConnection");
+
+        $dumpFileName = $this->originalDatabaseConfig['database'] . '_' . date('Ymd_His') . '.sql.gz';
+        $this->pathToOriginalDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('original_dump_' . $dumpFileName);
+        $this->pathToSecureDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('secure_dump_' . $dumpFileName);
     }
 
     private function dumpOriginalDatabase(): void
@@ -144,7 +160,6 @@ class SecureDbDumpCommand extends Command
     private function importIntoTempDatabase(): void
     {
         $this->info('Importing the original dump into the temporary database...');
-        //DB::unprepared(file_get_contents($this->pathToOriginalDumpFile));
         exec("gunzip -c {$this->pathToOriginalDumpFile} | mysql -u{$this->tempDatabaseConfig['username']} -p{$this->tempDatabaseConfig['password']} {$this->tempDatabaseConfig['database']}", $output, $returnVar);
         if ($returnVar !== 0) {
             throw new Exception("Error importing database: " . implode("\n", $output));
@@ -153,7 +168,7 @@ class SecureDbDumpCommand extends Command
         if (! empty(config('secure-db-dump.ignore_tables'))) {
             DB::statement('SET FOREIGN_KEY_CHECKS=0;');
             foreach (config('secure-db-dump.ignore_tables') as $table) {
-                $this->info('Truncating ignored table: '.$table);
+                $this->info('Truncating table: '.$table);
                 DB::table($table)->truncate();
             }
             DB::statement('SET FOREIGN_KEY_CHECKS=1;');
@@ -197,28 +212,28 @@ class SecureDbDumpCommand extends Command
             $fieldsToAnonymizeGroupedByTable = app($rules)();
         }
 
-        collect($fieldsToAnonymizeGroupedByTable)->each(function ($fields, $table) {
+        collect($fieldsToAnonymizeGroupedByTable)->each(function ($configs, $table) {
 
             $this->info('Anonymizing fields in table: '.$table);
-            $this->withProgressBar(DB::table($table)->cursor(), function ($row) use ($fields, $table) {
+            $this->withProgressBar(DB::table($table)->cursor(), function ($row) use ($configs, $table) {
 
-                foreach ($fields as $config) {
-                    $field = $config['field'] ?? null;
-                    $type = $config['type'] ?? null;
-                    $whereConditions = $config['where'] ?? null;
+                /** @var AnonymizerConfig $config */
+                foreach ($configs as $config) {
+                    $config = $config->build();
 
-                    if($this->configIsInvalid($type, $field, $row)){
+                    if($this->configIsInvalid($config['type'], $config['field'], $row)){
                         continue;
                     }
-                    if ($this->whereConditionsAreNotMet($row, $whereConditions)) {
+                    if ($this->whereConditionsAreNotMet($row, $config['where'])) {
                         continue;
                     }
 
-                    $this->applyFakerAnonymization($table, $row, $type, $field, $config);
-                    $this->applyStaticAnonymization($table, $row, $type, $field, $config);
+                    $this->applyFakerAnonymization($table, $row, $config['type'], $config['field'], $config);
+                    $this->applyStaticAnonymization($table, $row, $config['type'], $config['field'], $config);
                 }
             });
 
+            $this->info('');
             $this->info('');
         });
 
@@ -232,12 +247,12 @@ class SecureDbDumpCommand extends Command
             return false;
         }
 
-        $matches = true;
+        $allConditionsAreMet = true;
 
         foreach ($conditions as $conditionKey => $condition) {
             if($condition instanceof Closure){
                 if(! $condition($row->$conditionKey)){
-                    $matches = false;
+                    $allConditionsAreMet = false;
                     break;
                 }
 
@@ -245,12 +260,12 @@ class SecureDbDumpCommand extends Command
             }
 
             if($condition !== $row->$conditionKey){
-                $matches = false;
+                $allConditionsAreMet = false;
                 break;
             }
         }
 
-        return ! $matches;
+        return ! $allConditionsAreMet;
     }
 
     private function applyFakerAnonymization(string $table, object $row, string $type, string $field, array $config): void
