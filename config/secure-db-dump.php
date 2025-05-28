@@ -50,7 +50,7 @@ return [
             'licence_plate' => [
                 'type' => 'faker',
                 'method' => 'regexify',
-                'value' => 'LG [A-Z]{2} [0-9]{2,4}'
+                'args' => ['LG [A-Z]{2} [0-9]{2,4}']
             ],
         ],*/
     ],

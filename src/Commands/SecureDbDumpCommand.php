@@ -20,12 +20,16 @@ class SecureDbDumpCommand extends Command
     public $description = 'My command';
 
     private string $originalDatabaseConnection;
-    private string $tempDatabaseConnection;
+
     private array $originalDatabaseConfig;
+
     private array $tempDatabaseConfig;
+
     private string $tempDatabaseName = 'temp_secure_db_dump';
-    private string $disk;
-    private string $pathToDumpFile;
+
+    private string $pathToOriginalDumpFile;
+
+    private string $pathToSecureDumpFile;
 
     private Generator $faker;
 
@@ -34,22 +38,24 @@ class SecureDbDumpCommand extends Command
         $this->faker = Factory::create();
         $this->originalDatabaseConnection = config('secure-db-dump.db_connection') ?? DB::getDefaultConnection();
         $this->originalDatabaseConfig = config("database.connections.$this->originalDatabaseConnection");
+        $dumpFileName = $this->originalDatabaseConfig['database'].'_'.date('Ymd_His').'.sql';
+        $this->pathToOriginalDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('original_dump_'.$dumpFileName);
+        $this->pathToSecureDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('secure_dump_'.$dumpFileName);
 
-        $this->disk = config('secure-db-dump.disk') ?? 'local';
-
-        $this->pathToDumpFile = Storage::disk($this->disk)->path('secure_dump_' . $this->originalDatabaseConfig['database'] . '_' . date('Ymd_His') . '.sql');
         $this->dumpOriginalDatabase();
 
         $this->setupTempDatabase();
         $this->importIntoTempDatabase();
-
         $this->anonymizeDataInTempDatabase();
-
         $this->dumpSecureDatabase();
 
         $this->cleanUpTempDatabase();
 
-        $this->info('You can find your secure database dump at: ' . $this->pathToDumpFile);
+        if ($this->ask('Should I delete the original dump file? (yes/no)', 'yes') === 'yes') {
+            unlink($this->pathToOriginalDumpFile);
+        }
+
+        $this->info('You can find your secure database dump at: '.$this->pathToSecureDumpFile);
 
         return self::SUCCESS;
     }
@@ -62,7 +68,7 @@ class SecureDbDumpCommand extends Command
             'pgsql' => new PostgreSql,
             'sqlite' => new Sqlite,
             'mongodb' => new MongoDb,
-            default => throw new \Exception('Unsupported database connection: ' . $this->originalDatabaseConnection),
+            default => throw new \Exception('Unsupported database connection: '.$this->originalDatabaseConnection),
         };
 
         $dumper = $dumper::create()
@@ -70,11 +76,7 @@ class SecureDbDumpCommand extends Command
             ->setUserName($this->originalDatabaseConfig['username'])
             ->setPassword($this->originalDatabaseConfig['password']);
 
-        if (!empty(config('secure-db-dump.ignore_tables'))) {
-            $dumper->excludeTables(config('secure-db-dump.ignore_tables'));
-        }
-
-        $dumper->dumpToFile($this->pathToDumpFile);
+        $dumper->dumpToFile($this->pathToOriginalDumpFile);
     }
 
     private function dumpSecureDatabase(): void
@@ -85,7 +87,7 @@ class SecureDbDumpCommand extends Command
             'pgsql' => new PostgreSql,
             'sqlite' => new Sqlite,
             'mongodb' => new MongoDb,
-            default => throw new \Exception('Unsupported database connection: ' . $this->originalDatabaseConnection),
+            default => throw new \Exception('Unsupported database connection: '.$this->originalDatabaseConnection),
         };
 
         $dumper = $dumper::create()
@@ -97,12 +99,12 @@ class SecureDbDumpCommand extends Command
             $dumper->doNotCreateTables();
         }
 
-        $dumper->dumpToFile($this->pathToDumpFile);
+        $dumper->dumpToFile($this->pathToSecureDumpFile);
     }
 
     private function setupTempDatabase(): void
     {
-        DB::statement('CREATE DATABASE IF NOT EXISTS ' . $this->tempDatabaseName);
+        DB::statement('CREATE DATABASE IF NOT EXISTS '.$this->tempDatabaseName);
 
         config(['database.connections.temp_secure_db_dump' => [
             'driver' => 'mysql',
@@ -115,31 +117,38 @@ class SecureDbDumpCommand extends Command
         ]]);
 
         DB::setDefaultConnection('temp_secure_db_dump');
-        $this->tempDatabaseConnection = 'temp_secure_db_dump';
-        $this->tempDatabaseConfig = config("database.connections.temp_secure_db_dump");
+        $this->tempDatabaseConfig = config('database.connections.temp_secure_db_dump');
     }
 
     private function importIntoTempDatabase(): void
     {
-        DB::unprepared(file_get_contents($this->pathToDumpFile));
+        DB::unprepared(file_get_contents($this->pathToOriginalDumpFile));
+
+        if (! empty(config('secure-db-dump.ignore_tables'))) {
+            foreach (config('secure-db-dump.ignore_tables') as $table) {
+                $this->info('Truncating ignored table: '.$table);
+                DB::table($table)->truncate();
+            }
+        }
     }
 
     private function cleanUpTempDatabase(): void
     {
-        if(app()->isLocal()) {
+        if (app()->isLocal()) {
             $this->warn('Skipping dropping database in local environment.');
+
             return;
         }
 
         try {
-            DB::statement('DROP DATABASE IF EXISTS ' . $this->tempDatabaseName);
+            DB::statement('DROP DATABASE IF EXISTS '.$this->tempDatabaseName);
         } catch (\Exception $exception) {
-            $this->error('Failed to drop database: ' . $exception->getMessage());
+            $this->error('Failed to drop database: '.$exception->getMessage());
 
             $this->info('Trying to drop all tables instead.');
             $tables = DB::select('SHOW TABLES');
             foreach ($tables as $table) {
-                $tableName = array_values((array)$table)[0];
+                $tableName = array_values((array) $table)[0];
                 DB::statement("DROP TABLE IF EXISTS `$tableName`");
             }
         }
@@ -150,14 +159,16 @@ class SecureDbDumpCommand extends Command
         $fieldsToAnonymizeGroupedByTable = config('secure-db-dump.anonymize_fields', []);
 
         collect($fieldsToAnonymizeGroupedByTable)->each(function ($fields, $table) {
-            $this->info('Anonymizing fields in table: ' . $table);
+            $this->info('Anonymizing fields in table: '.$table);
             $this->withProgressBar(DB::table($table)->cursor(), function ($row) use ($fields, $table) {
                 $dataToUpdate = [];
                 foreach ($fields as $field => $config) {
 
                     if ($config['type'] === 'faker') {
                         $method = $config['method'];
-                        $dataToUpdate[$field] = $this->faker->$method($config['value'] ?? null);
+                        $args = $config['args'] ?? [];
+                        $dataToUpdate[$field] = $this->faker->$method(...$args);
+
                         continue;
                     }
 
