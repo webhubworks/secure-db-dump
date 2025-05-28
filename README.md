@@ -50,6 +50,15 @@ You will need to provide a `method` and optionally `args` (an array) for the Fak
                     'id' => 2,
                 ]
             ],
+            # Alternatively, you can use a closure to define the where condition.
+            [
+                'field' => 'another_field',
+                'type' => 'faker',
+                'method' => 'sentence',
+                'where' => [
+                    'email' => fn($value) => ! str($value)->endsWith('@webhub.de'),
+                ],
+            ],
         ],
         
         'cars' => [

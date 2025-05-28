@@ -2,6 +2,7 @@
 
 namespace Webhub\SecureDbDump\Commands;
 
+use Closure;
 use Exception;
 use Faker\Factory;
 use Faker\Generator;
@@ -192,51 +193,92 @@ class SecureDbDumpCommand extends Command
         $fieldsToAnonymizeGroupedByTable = config('secure-db-dump.anonymize_fields', []);
 
         collect($fieldsToAnonymizeGroupedByTable)->each(function ($fields, $table) {
+
             $this->info('Anonymizing fields in table: '.$table);
             $this->withProgressBar(DB::table($table)->cursor(), function ($row) use ($fields, $table) {
-                $dataToUpdate = [];
+
                 foreach ($fields as $config) {
                     $field = $config['field'] ?? null;
                     $type = $config['type'] ?? null;
                     $whereConditions = $config['where'] ?? null;
 
-                    if($field === null || $type === null || empty($row->$field)){
+                    if($this->configIsInvalid($type, $field, $row)){
+                        continue;
+                    }
+                    if ($this->whereConditionsAreNotMet($row, $whereConditions)) {
                         continue;
                     }
 
-                    if($whereConditions !== null){
-                        $matches = true;
-                        foreach ($whereConditions as $whereField => $whereValue) {
-                            if ($row->$whereField !== $whereValue) {
-                                $matches = false;
-                                break;
-                            }
-                        }
-                        if (!$matches) {
-                            continue;
-                        }
-                    }
-
-                    if ($type === 'faker') {
-                        $method = $config['method'];
-                        $args = $config['args'] ?? [];
-                        $dataToUpdate[$field] = $this->faker->$method(...$args);
-
-                        continue;
-                    }
-
-                    if ($type === 'static') {
-                        $dataToUpdate[$field] = $config['value'];
-                    }
-                }
-
-                if (!empty($dataToUpdate)) {
-                    DB::table($table)->where('id', $row->id)->update($dataToUpdate);
+                    $this->applyFakerAnonymization($table, $row, $type, $field, $config);
+                    $this->applyStaticAnonymization($table, $row, $type, $field, $config);
                 }
             });
+
             $this->info('');
         });
+
         $this->info('✅ Done.');
         $this->info('');
+    }
+
+    private function whereConditionsAreNotMet($row, ?array $conditions = null): bool
+    {
+        if($conditions === null){
+            return false;
+        }
+
+        $matches = true;
+
+        foreach ($conditions as $conditionKey => $condition) {
+            if($condition instanceof Closure){
+                if(! $condition($row->$conditionKey)){
+                    $matches = false;
+                    break;
+                }
+
+                continue;
+            }
+
+            if($condition !== $row->$conditionKey){
+                $matches = false;
+                break;
+            }
+        }
+
+        return ! $matches;
+    }
+
+    private function applyFakerAnonymization(string $table, object $row, string $type, string $field, array $config): void
+    {
+        if ($type !== 'faker') {
+            return;
+        }
+
+        $method = $config['method'];
+        $args = $config['args'] ?? [];
+
+        DB::table($table)
+            ->where('id', $row->id)
+            ->update([
+                $field => $this->faker->$method(...$args),
+            ]);
+    }
+
+    private function applyStaticAnonymization(string $table, object $row, string $type, string $field, array $config): void
+    {
+        if ($type !== 'static') {
+            return;
+        }
+
+        DB::table($table)
+            ->where('id', $row->id)
+            ->update([
+                $field => $config['value'],
+            ]);
+    }
+
+    private function configIsInvalid(mixed $type, mixed $field, mixed $row): bool
+    {
+        return $field === null || $type === null || empty($row->$field);
     }
 }

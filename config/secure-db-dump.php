@@ -42,6 +42,9 @@ return [
                 'field' => 'name',
                 'type' => 'faker',
                 'method' => 'name',
+                /*'where' => [
+                    'email' => fn($value) => ! str($value)->endsWith('@webhub.de'),
+                ],*/
             ],
             [
                 'field' => 'email',
