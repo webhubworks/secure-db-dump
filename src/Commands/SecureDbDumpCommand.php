@@ -17,7 +17,7 @@ use Spatie\DbDumper\Databases\Sqlite;
 
 class SecureDbDumpCommand extends Command
 {
-    public $signature = 'secure-db-dump:run';
+    public $signature = 'secure-db-dump:run {--only-anonymize}';
 
     public $description = 'My command';
 
@@ -43,6 +43,13 @@ class SecureDbDumpCommand extends Command
         $dumpFileName = $this->originalDatabaseConfig['database'].'_'.date('Ymd_His').'.sql.gz';
         $this->pathToOriginalDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('original_dump_'.$dumpFileName);
         $this->pathToSecureDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('secure_dump_'.$dumpFileName);
+
+        if($this->option('only-anonymize')){
+            $this->setupTempDatabase();
+            $this->anonymizeDataInTempDatabase();
+
+            return self::SUCCESS;
+        }
 
         $this->dumpOriginalDatabase();
 
@@ -82,6 +89,7 @@ class SecureDbDumpCommand extends Command
         $this->info('Dumping original database to '.$this->pathToOriginalDumpFile.'...');
         $dumper->dumpToFile($this->pathToOriginalDumpFile);
         $this->info('✅ Done.');
+        $this->info('');
     }
 
     private function dumpSecureDatabase(): void
@@ -108,6 +116,7 @@ class SecureDbDumpCommand extends Command
         $this->info('Dumping secure database to '.$this->pathToSecureDumpFile.'...');
         $dumper->dumpToFile($this->pathToSecureDumpFile);
         $this->info('✅ Done.');
+        $this->info('');
     }
 
     private function setupTempDatabase(): void
@@ -128,6 +137,7 @@ class SecureDbDumpCommand extends Command
         DB::setDefaultConnection('temp_secure_db_dump');
         $this->tempDatabaseConfig = config('database.connections.temp_secure_db_dump');
         $this->info('✅ Done.');
+        $this->info('');
     }
 
     private function importIntoTempDatabase(): void
@@ -148,6 +158,7 @@ class SecureDbDumpCommand extends Command
             DB::statement('SET FOREIGN_KEY_CHECKS=1;');
         }
         $this->info('✅ Done.');
+        $this->info('');
     }
 
     private function cleanUpTempDatabase(): void
@@ -172,6 +183,7 @@ class SecureDbDumpCommand extends Command
             }
         }
         $this->info('✅ Done.');
+        $this->info('');
     }
 
     private function anonymizeDataInTempDatabase(): void
@@ -217,10 +229,14 @@ class SecureDbDumpCommand extends Command
                         $dataToUpdate[$field] = $config['value'];
                     }
                 }
-                DB::table($table)->where('id', $row->id)->update($dataToUpdate);
+
+                if (!empty($dataToUpdate)) {
+                    DB::table($table)->where('id', $row->id)->update($dataToUpdate);
+                }
             });
             $this->info('');
         });
         $this->info('✅ Done.');
+        $this->info('');
     }
 }
