@@ -37,7 +37,7 @@ class SecureDbDumpCommand extends Command
 
     public function handle(): int
     {
-        $this->faker = Factory::create();
+        $this->faker = Factory::create(config('secure-db-dump.faker_locale', 'de_DE'));
         $this->originalDatabaseConnection = config('secure-db-dump.db_connection') ?? DB::getDefaultConnection();
         $this->originalDatabaseConfig = config("database.connections.$this->originalDatabaseConnection");
         $dumpFileName = $this->originalDatabaseConfig['database'].'_'.date('Ymd_His').'.sql.gz';
@@ -183,12 +183,15 @@ class SecureDbDumpCommand extends Command
             $this->info('Anonymizing fields in table: '.$table);
             $this->withProgressBar(DB::table($table)->cursor(), function ($row) use ($fields, $table) {
                 $dataToUpdate = [];
-                foreach ($fields as $field => $config) {
-                    if(empty($dataToUpdate[$field])){
+                foreach ($fields as $config) {
+                    $field = $config['field'] ?? null;
+                    $type = $config['type'] ?? null;
+
+                    if($field === null || $type === null || empty($row->$field)){
                         continue;
                     }
 
-                    if ($config['type'] === 'faker') {
+                    if ($type === 'faker') {
                         $method = $config['method'];
                         $args = $config['args'] ?? [];
                         $dataToUpdate[$field] = $this->faker->$method(...$args);
@@ -196,7 +199,7 @@ class SecureDbDumpCommand extends Command
                         continue;
                     }
 
-                    if ($config['type'] === 'static') {
+                    if ($type === 'static') {
                         $dataToUpdate[$field] = $config['value'];
                     }
                 }

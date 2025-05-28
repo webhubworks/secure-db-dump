@@ -26,6 +26,11 @@ return [
     ],
 
     /**
+     * Specify the faker locale to use for anonymization.
+     */
+    'faker_locale' => env('SECURE_DB_DUMP_FAKER_LOCALE', 'de_DE'),
+
+    /**
      * Specify which fields should be anonymized.
      * For each table, create an array of fields that should be anonymized.
      *
@@ -33,21 +38,25 @@ return [
      */
     'anonymize_fields' => [
         'users' => [
-            'name' => [
+            [
+                'field' => 'name',
                 'type' => 'faker',
                 'method' => 'name',
             ],
-            'email' => [
+            [
+                'field' => 'email',
                 'type' => 'faker',
                 'method' => 'email',
             ],
-            'password' => [
+            [
+                'field' => 'password',
                 'type' => 'static',
                 'value' => '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
             ],
         ],
         /*'cars' => [
-            'licence_plate' => [
+            [
+                'field' => 'licence_plate',
                 'type' => 'faker',
                 'method' => 'regexify',
                 'args' => ['LG [A-Z]{2} [0-9]{2,4}']
