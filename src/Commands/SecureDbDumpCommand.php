@@ -21,7 +21,7 @@ class SecureDbDumpCommand extends Command
 {
     public $signature = 'secure-db-dump:run {--only-anonymize}';
 
-    public $description = 'My command';
+    public $description = 'Creates a dump of the original database, imports it into a temporary database, anonymizes the data, and creates a secure dump.';
 
     private string $originalDatabaseConnection;
 
@@ -44,7 +44,7 @@ class SecureDbDumpCommand extends Command
     {
         $this->setup();
 
-        if($this->option('only-anonymize')){
+        if ($this->option('only-anonymize')) {
             $this->setupTempDatabase();
             $this->anonymizeDataInTempDatabase();
 
@@ -81,9 +81,9 @@ class SecureDbDumpCommand extends Command
         $this->originalDatabaseConnection = config('secure-db-dump.db_connection') ?? DB::getDefaultConnection();
         $this->originalDatabaseConfig = config("database.connections.$this->originalDatabaseConnection");
 
-        $dumpFileName = $this->originalDatabaseConfig['database'] . '_' . date('Ymd_His') . '.sql.gz';
-        $this->pathToOriginalDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('original_dump_' . $dumpFileName);
-        $this->pathToSecureDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('secure_dump_' . $dumpFileName);
+        $dumpFileName = $this->originalDatabaseConfig['database'].'_'.date('Ymd_His').'.sql.gz';
+        $this->pathToOriginalDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('original_dump_'.$dumpFileName);
+        $this->pathToSecureDumpFile = Storage::disk(config('secure-db-dump.disk') ?? 'local')->path('secure_dump_'.$dumpFileName);
     }
 
     private function dumpOriginalDatabase(): void
@@ -101,7 +101,7 @@ class SecureDbDumpCommand extends Command
             ->setDbName($this->originalDatabaseConfig['database'])
             ->setUserName($this->originalDatabaseConfig['username'])
             ->setPassword($this->originalDatabaseConfig['password'])
-            ->useCompressor(new GzipCompressor());
+            ->useCompressor(new GzipCompressor);
 
         $this->info('Dumping original database to '.$this->pathToOriginalDumpFile.'...');
         $dumper->dumpToFile($this->pathToOriginalDumpFile);
@@ -124,7 +124,7 @@ class SecureDbDumpCommand extends Command
             ->setDbName($this->tempDatabaseConfig['database'])
             ->setUserName($this->tempDatabaseConfig['username'])
             ->setPassword($this->tempDatabaseConfig['password'])
-            ->useCompressor(new GzipCompressor());
+            ->useCompressor(new GzipCompressor);
 
         if (config('secure-db-dump.only_content') ?? false) {
             $dumper->doNotCreateTables();
@@ -162,7 +162,7 @@ class SecureDbDumpCommand extends Command
         $this->info('Importing the original dump into the temporary database...');
         exec("gunzip -c {$this->pathToOriginalDumpFile} | mysql -u{$this->tempDatabaseConfig['username']} -p{$this->tempDatabaseConfig['password']} {$this->tempDatabaseConfig['database']}", $output, $returnVar);
         if ($returnVar !== 0) {
-            throw new Exception("Error importing database: " . implode("\n", $output));
+            throw new Exception('Error importing database: '.implode("\n", $output));
         }
 
         if (! empty(config('secure-db-dump.ignore_tables'))) {
@@ -221,7 +221,7 @@ class SecureDbDumpCommand extends Command
                 foreach ($configs as $config) {
                     $config = $config->build();
 
-                    if($this->configIsInvalid($config['type'], $config['field'], $row)){
+                    if ($this->configIsInvalid($config['type'], $config['field'], $row)) {
                         continue;
                     }
                     if ($this->whereConditionsAreNotMet($row, $config['where'])) {
@@ -243,15 +243,20 @@ class SecureDbDumpCommand extends Command
 
     private function whereConditionsAreNotMet($row, ?array $conditions = null): bool
     {
-        if($conditions === null){
+        if ($conditions === null) {
             return false;
         }
 
         $allConditionsAreMet = true;
 
         foreach ($conditions as $conditionKey => $condition) {
-            if($condition instanceof Closure){
-                if(! $condition($row->$conditionKey)){
+
+            /**
+             * In case, a closure is provided such as:
+             * fn($value) => $value === 'some_value'
+             */
+            if ($condition instanceof Closure) {
+                if (! $condition($row->$conditionKey)) {
                     $allConditionsAreMet = false;
                     break;
                 }
@@ -259,7 +264,10 @@ class SecureDbDumpCommand extends Command
                 continue;
             }
 
-            if($condition !== $row->$conditionKey){
+            /**
+             * In case, a simple value is provided, we assume it is a direct comparison.
+             */
+            if ($condition !== $row->$conditionKey) {
                 $allConditionsAreMet = false;
                 break;
             }
