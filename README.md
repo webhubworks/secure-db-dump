@@ -1,3 +1,6 @@
+# Usage
+Call `artisan secure-db-dump:run` to export data based on the following config.
+
 # Config
 Publish the config file via `artisan vendor:publish --tag=secure-db-dump-config`.
 
